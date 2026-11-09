@@ -1,4 +1,5 @@
 const Book = require('../models/Book');
+const findByIdOr404 = require('../utils/findByIdOr404');
 const pick = require('../utils/pick');
 const { validateBook } = require('../services/bookRules');
 
@@ -13,4 +14,17 @@ async function createBook(req, res) {
   res.status(201).json(book);
 }
 
-module.exports = { createBook };
+// GET /books — each book includes its full author, not just the id.
+async function getBooks(req, res) {
+  const books = await Book.find().populate('author');
+  res.json(books);
+}
+
+// GET /books/:id
+async function getBook(req, res) {
+  const book = await findByIdOr404(Book, req.params.id, 'book');
+  await book.populate('author');
+  res.json(book);
+}
+
+module.exports = { createBook, getBooks, getBook };
