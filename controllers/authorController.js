@@ -1,4 +1,5 @@
 const Author = require('../models/Author');
+const Book = require('../models/Book');
 const findByIdOr404 = require('../utils/findByIdOr404');
 const pick = require('../utils/pick');
 
@@ -30,9 +31,17 @@ async function updateAuthor(req, res) {
   res.json(author);
 }
 
+// GET /authors/:id/books
+async function getAuthorBooks(req, res) {
+  const author = await findByIdOr404(Author, req.params.id, 'author');
+  const books = await Book.find({ author: author._id }).sort({ title: 1 });
+  res.json(books);
+}
+
 module.exports = {
   createAuthor,
   getAuthors,
   getAuthor,
   updateAuthor,
+  getAuthorBooks,
 };
