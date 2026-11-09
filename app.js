@@ -1,5 +1,6 @@
 const express = require('express');
 const authorRoutes = require('./routes/authorRoutes');
+const bookRoutes = require('./routes/bookRoutes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 // The Express app on its own, without a database connection or port,
@@ -13,6 +14,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/authors', authorRoutes);
+app.use('/books', bookRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
