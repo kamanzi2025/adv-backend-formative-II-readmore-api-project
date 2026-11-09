@@ -1,5 +1,6 @@
 const Book = require('../models/Book');
 const findByIdOr404 = require('../utils/findByIdOr404');
+const buildBookQuery = require('../utils/buildBookQuery');
 const pick = require('../utils/pick');
 const { validateBook } = require('../services/bookRules');
 
@@ -14,9 +15,12 @@ async function createBook(req, res) {
   res.status(201).json(book);
 }
 
-// GET /books — each book includes its full author, not just the id.
+// GET /books — filtering and sorting (Requirement 5).
 async function getBooks(req, res) {
-  const books = await Book.find().populate('author');
+  const { filter, sort } = buildBookQuery(req.query);
+
+  // The collation makes title sorting case-insensitive ("apple" before "Zebra").
+  const books = await Book.find(filter).collation(Book.TITLE_COLLATION).sort(sort).populate('author');
   res.json(books);
 }
 
