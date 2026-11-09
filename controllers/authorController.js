@@ -22,8 +22,17 @@ async function getAuthor(req, res) {
   res.json(author);
 }
 
+// PUT /authors/:id — updates only the fields sent; save() re-runs schema validation.
+async function updateAuthor(req, res) {
+  const author = await findByIdOr404(Author, req.params.id, 'author');
+  Object.assign(author, pick(req.body ?? {}, AUTHOR_FIELDS));
+  await author.save();
+  res.json(author);
+}
+
 module.exports = {
   createAuthor,
   getAuthors,
   getAuthor,
+  updateAuthor,
 };
