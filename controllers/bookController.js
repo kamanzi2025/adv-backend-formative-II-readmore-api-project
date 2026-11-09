@@ -15,13 +15,25 @@ async function createBook(req, res) {
   res.status(201).json(book);
 }
 
-// GET /books — filtering and sorting (Requirement 5).
+// GET /books — filtering, sorting and pagination (Requirement 5 + challenge).
 async function getBooks(req, res) {
-  const { filter, sort } = buildBookQuery(req.query);
+  const { filter, sort, pagination } = buildBookQuery(req.query);
 
   // The collation makes title sorting case-insensitive ("apple" before "Zebra").
-  const books = await Book.find(filter).collation(Book.TITLE_COLLATION).sort(sort).populate('author');
-  res.json(books);
+  const query = Book.find(filter).collation(Book.TITLE_COLLATION).sort(sort).populate('author');
+  if (pagination) {
+    query.skip((pagination.page - 1) * pagination.limit).limit(pagination.limit);
+  }
+
+  const [results, total] = await Promise.all([query, Book.countDocuments(filter)]);
+
+  res.json({
+    page: pagination ? pagination.page : 1,
+    limit: pagination ? pagination.limit : null, // null = no limit applied
+    total,
+    totalPages: pagination ? Math.ceil(total / pagination.limit) : 1,
+    results,
+  });
 }
 
 // GET /books/:id

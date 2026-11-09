@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const HttpError = require('./HttpError');
 
 const SORTABLE_FIELDS = ['price', 'title', 'publishedYear'];
+const MAX_LIMIT = 100;
 
 // Treat user text as literal characters inside a regular expression,
 // so a search for "c++" or "(" doesn't break the query.
@@ -28,8 +29,16 @@ function readNumber(query, name) {
   return number;
 }
 
-// Requirement 5: turn GET /books query params into a Mongo filter and sort.
-// Each param adds its own condition only when present, so any
+function readPositiveInteger(query, name) {
+  const number = readNumber(query, name);
+  if (number !== undefined && (!Number.isInteger(number) || number < 1)) {
+    throw new HttpError(400, `${name} must be a whole number of 1 or more`);
+  }
+  return number;
+}
+
+// Requirement 5: turn GET /books query params into a Mongo filter, sort and
+// pagination. Each param adds its own condition only when present, so any
 // combination works and no params means "everything".
 function buildBookQuery(query) {
   const filter = {};
@@ -67,10 +76,19 @@ function buildBookQuery(query) {
   if (order !== 'asc' && order !== 'desc') {
     throw new HttpError(400, 'order must be asc or desc');
   }
-  // _id as a tie-breaker keeps the order stable, so results come back in the same order every time.
+  // _id as a tie-breaker keeps the order stable, so pages never overlap.
   const sort = sortField ? { [sortField]: order === 'asc' ? 1 : -1, _id: 1 } : { _id: 1 };
 
-  return { filter, sort };
+  // Challenge: paginate only when asked to, so a plain GET /books still returns everything.
+  const page = readPositiveInteger(query, 'page');
+  const limit = readPositiveInteger(query, 'limit');
+  if (limit !== undefined && limit > MAX_LIMIT) {
+    throw new HttpError(400, `limit cannot be more than ${MAX_LIMIT}`);
+  }
+  const pagination =
+    page !== undefined || limit !== undefined ? { page: page || 1, limit: limit || 10 } : null;
+
+  return { filter, sort, pagination };
 }
 
 module.exports = buildBookQuery;
