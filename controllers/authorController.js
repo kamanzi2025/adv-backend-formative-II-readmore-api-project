@@ -60,6 +60,37 @@ async function getAuthorBooks(req, res) {
   res.json(books);
 }
 
+// GET /authors/:id/stats — Requirement 6.
+async function getAuthorStats(req, res) {
+  const author = await findByIdOr404(Author, req.params.id, 'author');
+
+  // Sorted by price, so the first book in the group is the cheapest and the
+  // last is the most expensive. Title breaks ties so the answer is repeatable.
+  const [summary] = await Book.aggregate([
+    { $match: { author: author._id } },
+    { $sort: { price: 1, title: 1 } },
+    {
+      $group: {
+        _id: null,
+        bookCount: { $sum: 1 },
+        averagePrice: { $avg: '$price' },
+        cheapestBook: { $first: '$title' },
+        mostExpensiveBook: { $last: '$title' },
+      },
+    },
+  ]);
+
+  // No books: the count is a real 0, but there is no average, cheapest or most
+  // expensive book, so those are null rather than a misleading price of 0.
+  res.json({
+    author: author.name,
+    bookCount: summary ? summary.bookCount : 0,
+    averagePrice: summary ? Math.round(summary.averagePrice * 100) / 100 : null,
+    cheapestBook: summary ? summary.cheapestBook : null,
+    mostExpensiveBook: summary ? summary.mostExpensiveBook : null,
+  });
+}
+
 module.exports = {
   createAuthor,
   getAuthors,
@@ -67,4 +98,5 @@ module.exports = {
   updateAuthor,
   deleteAuthor,
   getAuthorBooks,
+  getAuthorStats,
 };
