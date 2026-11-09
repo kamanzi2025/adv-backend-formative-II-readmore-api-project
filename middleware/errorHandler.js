@@ -20,6 +20,11 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({ message: 'Validation failed', errors });
   }
 
+  // Unique index violation: two requests created the same author/title at once.
+  if (err.code === 11000) {
+    return res.status(409).json({ message: 'This author already has a book with that title' });
+  }
+
   // Body that isn't valid JSON.
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Request body is not valid JSON' });

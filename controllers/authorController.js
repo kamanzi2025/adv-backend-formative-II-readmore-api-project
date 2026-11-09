@@ -56,7 +56,7 @@ async function deleteAuthor(req, res) {
 // GET /authors/:id/books
 async function getAuthorBooks(req, res) {
   const author = await findByIdOr404(Author, req.params.id, 'author');
-  const books = await Book.find({ author: author._id }).sort({ title: 1 });
+  const books = await Book.find({ author: author._id }).collation(Book.TITLE_COLLATION).sort({ title: 1 });
   res.json(books);
 }
 
