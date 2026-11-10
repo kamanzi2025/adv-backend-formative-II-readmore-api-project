@@ -1,6 +1,6 @@
-const Author = require('../models/Author');
 const Book = require('../models/Book');
 const HttpError = require('../utils/HttpError');
+const { reserveBook, releaseBook } = require('./authorBookCount');
 
 const EARLIEST_YEAR = 1450; // roughly when the printing press arrived
 
@@ -27,15 +27,6 @@ function checkBookValues(book) {
   }
 }
 
-// Requirement 1: `required` only checks that an id was sent, not that an
-// author with that id exists, so we have to look it up.
-async function ensureAuthorExists(authorId) {
-  const exists = await Author.exists({ _id: authorId });
-  if (!exists) {
-    throw new HttpError(400, `Cannot save book: no author exists with id ${authorId}`);
-  }
-}
-
 // Requirement 2: titles are unique per author, ignoring case.
 // The collation matches the unique index on Book, so this query uses it.
 async function ensureTitleIsFree(book) {
@@ -50,16 +41,25 @@ async function ensureTitleIsFree(book) {
   }
 }
 
-// Run every rule on a new or edited (not yet saved) book, cheapest first:
-// field shape (400), value rules (422), author exists (400), duplicate title (409).
-// The database checks only run when the fields they depend on are new or changed.
-async function validateBook(book) {
+// Check every rule, then save a new or edited book, cheapest check first:
+// field shape (400), value rules (422), duplicate title (409), author exists (400).
+// `previousAuthorId` is the book's author before an update (null for a new book).
+async function saveBook(book, previousAuthorId = null) {
   await book.validate();
   checkBookValues(book);
 
-  const authorChanged = book.isNew || book.isModified('author');
-  if (authorChanged) await ensureAuthorExists(book.author);
+  const authorChanged = !previousAuthorId || !book.author.equals(previousAuthorId);
   if (authorChanged || book.isModified('title')) await ensureTitleIsFree(book);
+
+  // Requirement 1: claiming a place on the author fails if they don't exist.
+  if (authorChanged) await reserveBook(book.author);
+  try {
+    await book.save({ validateBeforeSave: false }); // already validated above
+  } catch (err) {
+    if (authorChanged) await releaseBook(book.author); // nothing was saved
+    throw err;
+  }
+  if (authorChanged && previousAuthorId) await releaseBook(previousAuthorId);
 }
 
-module.exports = { validateBook };
+module.exports = { saveBook };

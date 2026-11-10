@@ -2,15 +2,15 @@ const Book = require('../models/Book');
 const findByIdOr404 = require('../utils/findByIdOr404');
 const buildBookQuery = require('../utils/buildBookQuery');
 const pick = require('../utils/pick');
-const { validateBook } = require('../services/bookRules');
+const { saveBook } = require('../services/bookRules');
+const { releaseBook } = require('../services/authorBookCount');
 
 const BOOK_FIELDS = ['title', 'genre', 'price', 'publishedYear', 'author'];
 
 // POST /books — nothing is saved unless every rule passes.
 async function createBook(req, res) {
   const book = new Book(pick(req.body ?? {}, BOOK_FIELDS));
-  await validateBook(book);
-  await book.save();
+  await saveBook(book);
   await book.populate('author');
   res.status(201).json(book);
 }
@@ -48,17 +48,18 @@ async function getBook(req, res) {
 // involves another (e.g. moving a book to an author who already has that title).
 async function updateBook(req, res) {
   const book = await findByIdOr404(Book, req.params.id, 'book');
+  const previousAuthorId = book.author;
   Object.assign(book, pick(req.body ?? {}, BOOK_FIELDS));
-  await validateBook(book);
-  await book.save();
+  await saveBook(book, previousAuthorId);
   await book.populate('author');
   res.json(book);
 }
 
-// DELETE /books/:id
+// DELETE /books/:id — find-and-delete in one step, so two identical deletes
+// can't both succeed and give the author's place back twice.
 async function deleteBook(req, res) {
-  const book = await findByIdOr404(Book, req.params.id, 'book');
-  await book.deleteOne();
+  const book = await findByIdOr404(Book, req.params.id, 'book', 'findByIdAndDelete');
+  await releaseBook(book.author);
   res.json({ message: `Book "${book.title}" deleted` });
 }
 

@@ -16,7 +16,9 @@ const bookSchema = new mongoose.Schema(
       required: [true, 'author is required'],
     },
   },
-  { timestamps: true }
+  // optimisticConcurrency: saving a book that another request changed since it
+  // was loaded fails instead of silently overwriting that change.
+  { timestamps: true, optimisticConcurrency: true }
 );
 
 // Backstop for the "no duplicate titles per author" rule: the controller checks

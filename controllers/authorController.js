@@ -3,6 +3,7 @@ const Book = require('../models/Book');
 const HttpError = require('../utils/HttpError');
 const findByIdOr404 = require('../utils/findByIdOr404');
 const pick = require('../utils/pick');
+const { deleteIfNoBooks } = require('../services/authorBookCount');
 
 const AUTHOR_FIELDS = ['name', 'country', 'bio'];
 
@@ -37,11 +38,17 @@ async function updateAuthor(req, res) {
 // deleted. Their books are store inventory and may already have been sold,
 // so we never destroy or silently re-attribute them as a side effect.
 // The books must be deleted or moved to another author (PUT /books/:id) first.
+// The "has no books" check and the delete happen in one atomic step, so a book
+// created at the same moment can't slip in between and become an orphan.
 async function deleteAuthor(req, res) {
   const author = await findByIdOr404(Author, req.params.id, 'author');
 
-  const bookCount = await Book.countDocuments({ author: author._id });
-  if (bookCount > 0) {
+  if (!(await deleteIfNoBooks(author._id))) {
+    // Another request may have deleted the author in the meantime.
+    if (!(await Author.exists({ _id: author._id }))) {
+      throw new HttpError(404, `No author found with id ${req.params.id}`);
+    }
+    const bookCount = await Book.countDocuments({ author: author._id });
     throw new HttpError(
       409,
       `Cannot delete ${author.name}: they still have ${bookCount} book(s). ` +
@@ -49,7 +56,6 @@ async function deleteAuthor(req, res) {
     );
   }
 
-  await author.deleteOne();
   res.json({ message: `Author ${author.name} deleted` });
 }
 

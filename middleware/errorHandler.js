@@ -20,6 +20,15 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({ message: 'Validation failed', errors });
   }
 
+  // The book changed (optimisticConcurrency) or was deleted by another request
+  // between being loaded and saved.
+  if (err instanceof mongoose.Error.VersionError) {
+    return res.status(409).json({ message: 'This book was changed by another request. Reload it and try again.' });
+  }
+  if (err instanceof mongoose.Error.DocumentNotFoundError) {
+    return res.status(404).json({ message: 'This book was deleted by another request' });
+  }
+
   // Unique index violation: two requests created the same author/title at once.
   if (err.code === 11000) {
     return res.status(409).json({ message: 'This author already has a book with that title' });
