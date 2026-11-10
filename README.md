@@ -1,5 +1,75 @@
 # ReadMore API — Express + MongoDB (Mongoose)
 
+## Running the project
+
+```bash
+npm install
+cp .env.example .env      # then set MONGODB_URI to your local MongoDB or Atlas cluster
+npm run dev               # or: npm start
+```
+
+The server connects to MongoDB first and only starts listening once the connection succeeds (default port 3000). `requests.http` has a ready-made request for every endpoint and rule (VS Code REST Client).
+
+`npm test` runs the automated tests against a temporary in-memory MongoDB, so no database setup is needed for it.
+
+## Project structure
+
+```
+server.js          load .env, connect to MongoDB, start listening
+app.js             Express app: JSON body parsing, routes, error handling
+config/db.js       MongoDB connection
+models/            Author and Book schemas (Book.author references Author)
+controllers/       request handling and business rules
+routes/            URL -> controller wiring only
+services/          business rules: book checks and saving (bookRules), race-safe author/book link (authorBookCount)
+middleware/        404 for unknown routes and the central error handler
+utils/             small helpers: the GET /books query builder, id lookup, HttpError
+tests/             end-to-end tests for every endpoint and rule
+```
+
+## Endpoints
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/` | health check |
+| POST / GET | `/authors` | create / list |
+| GET / PUT / DELETE | `/authors/:id` | 404 if not found; delete is blocked while the author has books |
+| GET | `/authors/:id/books` | that author's books |
+| GET | `/authors/:id/stats` | count, average price, cheapest and most expensive book |
+| POST / GET | `/books` | create / list with filters, sorting and pagination |
+| GET / PUT / DELETE | `/books/:id` | 404 if not found; reads include the full author |
+
+## Design decisions
+
+**Status codes.** 400 for a malformed request (missing required field, wrong type, unknown author, bad query param), 404 for an id that doesn't match anything, 409 for a conflict with existing data (duplicate title, deleting an author who still has books), and 422 for a well-formed value that breaks a business rule (price or year).
+
+**Required fields.** An author needs a `name`; `country` and `bio` are optional. A book needs all five fields, because every one is used by the store: filtering (genre, price), the year rule, and the link to an author.
+
+**1 — No orphan books.** `required: true` only checks that *some* value was sent. MongoDB has no foreign keys, so it will store any well-formed id, even one that matches no author. So the API checks that the author exists before saving and returns 400 if they don't. This check also runs when an update changes a book's author.
+
+*Why a plain lookup wasn't enough.* "Look up the author, then insert the book" is two separate steps, and so is "count the author's books, then delete the author". When a create and a delete arrive at the same moment, both checks can pass before either write happens, which leaves an orphan book. A test that sent both at once produced an orphan 30 times out of 30. To prevent this, each author keeps an internal `bookCount`, which is never shown in responses. Creating a book adds 1 to it, but only if the author exists, and the check and the increment happen together as one atomic operation. Deleting an author removes them only if `bookCount` is 0, again as one operation. Whichever request reaches the author first wins, and the other is refused. If a book fails to save, its place is given back.
+A MongoDB transaction would also solve this, but transactions need a replica set such as Atlas. This approach works on a plain local MongoDB too.
+*Downside:* the counter is a second copy of information the books already hold. If the server crashed between reserving a place and saving the book, the count would be one too high. That fails safe: the author can't be deleted, and no orphan is created. Stats are always calculated from the books themselves, never from the counter.
+
+**2 — Duplicate titles.** The check finds another book with the same author and title, compared case-insensitively using a collation. The book's own id is excluded so that an update doesn't count as a duplicate of itself. A unique index on `(author, title)` with the same collation is a backstop: two simultaneous requests could both pass the check, but the database will only accept one, and the other gets a 409. Titles are tidied before they're saved: spaces at the ends are trimmed and runs of spaces become one, so `"Things  Fall Apart"` counts as a duplicate of `"Things Fall Apart"`. The index is created when the server starts. If the database already holds a duplicate, the server stops with a message that says so, rather than running without the rule.
+
+**3 — Price and year.** Price must be above 0. The year must be a whole number between 1450 and the current year. The "current year" changes over time, which is why this lives in the controller rather than as a fixed `max` in the schema. These rules also run on updates. Mongoose would silently store `"price": true` as 1, so values that aren't a number or a numeric string get a 400 before that conversion can happen.
+
+**4 — Deleting an author: Option A, block (409).** A bookstore's books are inventory, and they may already have been sold, so order history and receipts point at them. Cascading would quietly destroy that data as a side effect of removing one author. Reassigning would credit real books to an author who didn't write them. Blocking is the only option that never loses or falsifies data, and it makes the admin decide what happens to each book.
+*Downside:* removing an author takes more steps. Their books must first be deleted, or moved with `PUT /books/:id`, and the 409 message says so. If the store needed one-click removal, a soft delete (marking books as discontinued) would be the next step. The block holds even when a delete and a new book arrive at the same moment (see rule 1).
+
+**Edits that collide.** If two requests try to change the same book at once, the second save is refused with a 409 asking the client to reload. A save on a book that another request has just deleted gets a 404. This stops one edit from silently overwriting another.
+
+**5 — Filtering.** `utils/buildBookQuery.js` starts with an empty filter `{}`, and each query param adds its own condition only when present. For example, `genre` alone gives `{ genre }`, `minPrice` alone gives `{ price: { $gte } }`, and both prices give `{ price: { $gte, $lte } }`. No params means `{}`, which returns everything. Search text is escaped, so characters like `.*` are matched literally. `sort` only accepts `price`, `title` or `publishedYear`, and invalid values return 400.
+
+**Pagination.** Applied only when `page` or `limit` is sent (default limit 10, maximum 100), so a plain `GET /books` still returns every book. The response always has the same shape: `{ page, limit, total, totalPages, results }`, where `limit: null` means no limit was applied.
+
+**6 — Stats with no books.** `bookCount` is `0`, and `averagePrice`, `cheapestBook` and `mostExpensiveBook` are `null`. An average of `0` would look like a real price, while `null` clearly means "nothing to measure".
+
+---
+
+# Assignment brief
+
 Your first backend API assignment. Build a small REST API for a bookstore using **Express.js**, with **MongoDB** as the database and **Mongoose** as the modelling layer.
 
 There are **two entities** — **Author** and **Book** — and they are **linked**: one author can have many books, and every book belongs to one author. You will model them, connect to MongoDB, and build endpoints for each.
