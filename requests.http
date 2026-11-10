@@ -1,0 +1,152 @@
+# Demo requests for the VS Code REST Client extension.
+# Run them top to bottom. After creating an author or book, paste its _id
+# into the variables below.
+
+@base = http://localhost:3000
+@authorId = PASTE_AUTHOR_ID
+@otherAuthorId = PASTE_SECOND_AUTHOR_ID
+@bookId = PASTE_BOOK_ID
+
+### Health check
+GET {{base}}/
+
+############ Authors ############
+
+### Create an author
+POST {{base}}/authors
+Content-Type: application/json
+
+{ "name": "Chinua Achebe", "country": "Nigeria", "bio": "Nigerian novelist and poet" }
+
+### Create a second author
+POST {{base}}/authors
+Content-Type: application/json
+
+{ "name": "Chimamanda Ngozi Adichie", "country": "Nigeria" }
+
+### Get all authors
+GET {{base}}/authors
+
+### Get one author
+GET {{base}}/authors/{{authorId}}
+
+### Update an author
+PUT {{base}}/authors/{{authorId}}
+Content-Type: application/json
+
+{ "bio": "Author of Things Fall Apart" }
+
+### Unknown author -> 404
+GET {{base}}/authors/000000000000000000000000
+
+############ Books ############
+
+### Create books for the author
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Things Fall Apart", "genre": "Fiction", "price": 15, "publishedYear": 1958, "author": "{{authorId}}" }
+
+###
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "No Longer at Ease", "genre": "Fiction", "price": 18, "publishedYear": 1960, "author": "{{authorId}}" }
+
+###
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Arrow of God", "genre": "Fiction", "price": 20, "publishedYear": 1964, "author": "{{authorId}}" }
+
+###
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Anthills of the Savannah", "genre": "Fiction", "price": 33, "publishedYear": 1987, "author": "{{authorId}}" }
+
+###
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "The Silent Sea", "genre": "Thriller", "price": 24.99, "publishedYear": 2021, "author": "{{otherAuthorId}}" }
+
+### Get all books (author is populated)
+GET {{base}}/books
+
+### Get one book
+GET {{base}}/books/{{bookId}}
+
+### Update a book
+PUT {{base}}/books/{{bookId}}
+Content-Type: application/json
+
+{ "price": 16.5 }
+
+### Books by one author
+GET {{base}}/authors/{{authorId}}/books
+
+############ Part 4: business rules ############
+
+### 1. Orphan book: author id that doesn't exist -> 400
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Ghost Book", "genre": "Fiction", "price": 10, "publishedYear": 2000, "author": "000000000000000000000000" }
+
+### 2. Duplicate title for the same author, different case -> 409
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "things fall apart", "genre": "Fiction", "price": 12, "publishedYear": 1958, "author": "{{authorId}}" }
+
+### 2. Same title for a DIFFERENT author is allowed -> 201
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Things Fall Apart", "genre": "Poetry", "price": 12, "publishedYear": 2010, "author": "{{otherAuthorId}}" }
+
+### 3. Price zero -> 422
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Free Book", "genre": "Fiction", "price": 0, "publishedYear": 2000, "author": "{{authorId}}" }
+
+### 3. Year in the future -> 422
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Future Book", "genre": "Fiction", "price": 10, "publishedYear": 2999, "author": "{{authorId}}" }
+
+### 3. Year before 1450 -> 422
+POST {{base}}/books
+Content-Type: application/json
+
+{ "title": "Ancient Book", "genre": "Fiction", "price": 10, "publishedYear": 1200, "author": "{{authorId}}" }
+
+### 4. Delete an author who still has books -> 409 (blocked)
+DELETE {{base}}/authors/{{authorId}}
+
+### 5. Filters combined
+GET {{base}}/books?genre=Fiction&minPrice=16&maxPrice=30&sort=price&order=desc
+
+### 5. The README example
+GET {{base}}/books?genre=Thriller&minPrice=10&maxPrice=30&search=sea&sort=price&order=asc
+
+### 5. Search + author filter
+GET {{base}}/books?search=of&author={{authorId}}
+
+### 5. Invalid sort field -> 400
+GET {{base}}/books?sort=author
+
+### Challenge: pagination
+GET {{base}}/books?sort=title&page=1&limit=2
+
+### 6. Author stats
+GET {{base}}/authors/{{authorId}}/stats
+
+### 6. Stats for an author with no books (create one first and paste its id)
+GET {{base}}/authors/PASTE_EMPTY_AUTHOR_ID/stats
+
+### Delete a book
+DELETE {{base}}/books/{{bookId}}
