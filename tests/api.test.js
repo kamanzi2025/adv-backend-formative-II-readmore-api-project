@@ -490,6 +490,20 @@ describe('startup index check', () => {
   });
 });
 
+test('saving an author that another request just deleted is a 404 that names no other entity', async () => {
+  const { errorHandler } = require('../middleware/errorHandler');
+  const author = await createAuthor();
+  const loaded = await Author.findById(author._id); // what PUT /authors/:id holds
+  await api.delete(`/authors/${author._id}`); // a delete lands in between
+  loaded.bio = 'Edited';
+  const err = await loaded.save().catch((e) => e);
+
+  const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
+  errorHandler(err, {}, res, () => {});
+  assert.equal(res.code, 404);
+  assert.doesNotMatch(res.body.message, /book/i);
+});
+
 test('invalid JSON body is 400', async () => {
   const res = await api.post('/authors').set('Content-Type', 'application/json').send('{bad');
   assert.equal(res.status, 400);
