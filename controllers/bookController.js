@@ -1,15 +1,12 @@
 const Book = require('../models/Book');
 const findByIdOr404 = require('../utils/findByIdOr404');
 const buildBookQuery = require('../utils/buildBookQuery');
-const pick = require('../utils/pick');
-const { saveBook } = require('../services/bookRules');
+const { readBookInput, saveBook } = require('../services/bookRules');
 const { releaseBook } = require('../services/authorBookCount');
-
-const BOOK_FIELDS = ['title', 'genre', 'price', 'publishedYear', 'author'];
 
 // POST /books — nothing is saved unless every rule passes.
 async function createBook(req, res) {
-  const book = new Book(pick(req.body ?? {}, BOOK_FIELDS));
+  const book = new Book(readBookInput(req.body));
   await saveBook(book);
   await book.populate('author');
   res.status(201).json(book);
@@ -49,7 +46,7 @@ async function getBook(req, res) {
 async function updateBook(req, res) {
   const book = await findByIdOr404(Book, req.params.id, 'book');
   const previousAuthorId = book.author;
-  Object.assign(book, pick(req.body ?? {}, BOOK_FIELDS));
+  Object.assign(book, readBookInput(req.body));
   await saveBook(book, previousAuthorId);
   await book.populate('author');
   res.json(book);

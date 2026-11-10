@@ -4,9 +4,15 @@ const mongoose = require('mongoose');
 // Shared with the controller so the duplicate-title check and the index agree.
 const TITLE_COLLATION = { locale: 'en', strength: 2 };
 
+// Trim and collapse runs of spaces, so "Things  Fall Apart" and
+// "Things Fall Apart" are stored, and compared, as the same title.
+function normaliseTitle(value) {
+  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : value;
+}
+
 const bookSchema = new mongoose.Schema(
   {
-    title: { type: String, required: [true, 'title is required'], trim: true },
+    title: { type: String, required: [true, 'title is required'], set: normaliseTitle },
     genre: { type: String, required: [true, 'genre is required'], trim: true },
     price: { type: Number, required: [true, 'price is required'] },
     publishedYear: { type: Number, required: [true, 'publishedYear is required'] },

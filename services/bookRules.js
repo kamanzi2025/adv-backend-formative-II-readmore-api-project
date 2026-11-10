@@ -1,8 +1,25 @@
 const Book = require('../models/Book');
 const HttpError = require('../utils/HttpError');
+const pick = require('../utils/pick');
 const { reserveBook, releaseBook } = require('./authorBookCount');
 
+const BOOK_FIELDS = ['title', 'genre', 'price', 'publishedYear', 'author'];
+const NUMERIC_FIELDS = ['price', 'publishedYear'];
 const EARLIEST_YEAR = 1450; // roughly when the printing press arrived
+
+// Take only the book fields from a request body. Mongoose would quietly turn
+// `true` into 1 for a Number field, so anything that isn't a number or a
+// numeric string is refused here, before that conversion happens.
+function readBookInput(body) {
+  const input = pick(body ?? {}, BOOK_FIELDS);
+  for (const field of NUMERIC_FIELDS) {
+    const value = input[field];
+    if (value != null && typeof value !== 'number' && typeof value !== 'string') {
+      throw new HttpError(400, `${field} must be a number`);
+    }
+  }
+  return input;
+}
 
 // Requirement 3: value rules a static schema can't express
 // ("not in the future" changes every year). Expects a Mongoose-validated book,
@@ -62,4 +79,4 @@ async function saveBook(book, previousAuthorId = null) {
   if (authorChanged && previousAuthorId) await releaseBook(previousAuthorId);
 }
 
-module.exports = { saveBook };
+module.exports = { readBookInput, saveBook };
