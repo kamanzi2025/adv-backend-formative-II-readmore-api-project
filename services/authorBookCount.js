@@ -1,4 +1,5 @@
 const Author = require('../models/Author');
+const Book = require('../models/Book');
 const HttpError = require('../utils/HttpError');
 
 // Requirements 1 and 4 without race conditions.
@@ -26,9 +27,38 @@ async function releaseBook(authorId) {
 }
 
 // Delete the author only if no book holds a place. Returns false if one does.
+// A missing counter (an author added outside the API) counts as 0: the first
+// reserveBook creates the field, so a missing field means none was ever claimed.
 async function deleteIfNoBooks(authorId) {
-  const deleted = await Author.findOneAndDelete({ _id: authorId, bookCount: 0 });
+  const deleted = await Author.findOneAndDelete({ _id: authorId, bookCount: { $in: [0, null] } });
   return Boolean(deleted);
 }
 
-module.exports = { reserveBook, releaseBook, deleteIfNoBooks };
+// Set every author's counter to the number of books that really point at them.
+// The counter only sees books saved through the API, so it can drift: books
+// added by a seed script or Compass, authors created before the counter
+// existed, or a crash between reserving a place and saving the book.
+// Runs at startup, before the server takes requests, so no create or delete
+// is half-way through. Returns how many authors were corrected.
+async function syncBookCounts() {
+  const counts = await Book.aggregate([{ $group: { _id: '$author', count: { $sum: 1 } } }]);
+  // Only authors whose counter is wrong are touched. timestamps: false, because
+  // fixing an internal counter isn't an edit to the author, so updatedAt stays.
+  const result = await Author.bulkWrite(
+    [
+      {
+        updateMany: {
+          filter: { _id: { $nin: counts.map((c) => c._id) }, bookCount: { $ne: 0 } },
+          update: { $set: { bookCount: 0 } },
+        },
+      },
+      ...counts.map(({ _id, count }) => ({
+        updateOne: { filter: { _id, bookCount: { $ne: count } }, update: { $set: { bookCount: count } } },
+      })),
+    ],
+    { timestamps: false }
+  );
+  return result.modifiedCount;
+}
+
+module.exports = { reserveBook, releaseBook, deleteIfNoBooks, syncBookCounts };

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const Book = require('../models/Book');
+const { syncBookCounts } = require('../services/authorBookCount');
 
 async function connectDB(uri) {
   if (!uri) {
@@ -7,7 +8,9 @@ async function connectDB(uri) {
   }
   await mongoose.connect(uri);
   await ensureIndexes();
+  const corrected = await syncBookCounts();
   console.log(`Connected to MongoDB: ${mongoose.connection.name}`);
+  if (corrected) console.log(`Corrected the book count of ${corrected} author(s) to match their books`);
 }
 
 // Build the per-author unique title index before taking traffic.

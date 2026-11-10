@@ -38,25 +38,37 @@ async function updateAuthor(req, res) {
 // deleted. Their books are store inventory and may already have been sold,
 // so we never destroy or silently re-attribute them as a side effect.
 // The books must be deleted or moved to another author (PUT /books/:id) first.
-// The "has no books" check and the delete happen in one atomic step, so a book
-// created at the same moment can't slip in between and become an orphan.
+// Two checks, both must pass:
+// 1. The books themselves: any saved book blocks the delete, whatever the
+//    counter says (a book may have been added outside the API).
+// 2. The counter, checked and deleted in one atomic step, so a book being
+//    created at this same moment can't slip in between and become an orphan.
 async function deleteAuthor(req, res) {
   const author = await findByIdOr404(Author, req.params.id, 'author');
+
+  const savedBooks = await Book.countDocuments({ author: author._id });
+  if (savedBooks > 0) throw hasBooksError(author, savedBooks);
 
   if (!(await deleteIfNoBooks(author._id))) {
     // Another request may have deleted the author in the meantime.
     if (!(await Author.exists({ _id: author._id }))) {
       throw new HttpError(404, `No author found with id ${req.params.id}`);
     }
-    const bookCount = await Book.countDocuments({ author: author._id });
-    throw new HttpError(
-      409,
-      `Cannot delete ${author.name}: they still have ${bookCount} book(s). ` +
-        'Delete those books or move them to another author first.'
-    );
+    const booksNow = await Book.countDocuments({ author: author._id });
+    if (booksNow > 0) throw hasBooksError(author, booksNow);
+    // No saved books, but a create has already reserved a place for one.
+    throw new HttpError(409, `Cannot delete ${author.name}: a book for them is being saved right now. Try again shortly.`);
   }
 
   res.json({ message: `Author ${author.name} deleted` });
+}
+
+function hasBooksError(author, count) {
+  return new HttpError(
+    409,
+    `Cannot delete ${author.name}: they still have ${count} book(s). ` +
+      'Delete those books or move them to another author first.'
+  );
 }
 
 // GET /authors/:id/books

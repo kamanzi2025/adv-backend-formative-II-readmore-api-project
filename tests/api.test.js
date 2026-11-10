@@ -403,6 +403,56 @@ function createBookRaw(authorId, title) {
   return api.post('/books').send({ title, genre: 'X', price: 5, publishedYear: 2000, author: authorId });
 }
 
+describe('data written outside the API (counter drift)', () => {
+  const { syncBookCounts } = require('../services/authorBookCount');
+  const counterOf = async (id) => (await Author.findById(id).select('+bookCount')).bookCount;
+  const insertBookDirectly = (authorId) =>
+    Book.collection.insertOne({ title: 'Seeded', genre: 'X', price: 5, publishedYear: 2000, author: new mongoose.Types.ObjectId(authorId) });
+
+  test('a book inserted straight into the database still blocks deleting its author', async () => {
+    const author = await createAuthor();
+    await insertBookDirectly(author._id);
+    const res = await api.delete(`/authors/${author._id}`);
+    assert.equal(res.status, 409);
+    assert.match(res.body.message, /1 book/);
+    assert.equal(await Author.countDocuments(), 1);
+  });
+
+  test('an author inserted without a counter can be deleted when they have no books', async () => {
+    const { insertedId } = await Author.collection.insertOne({ name: 'Imported' });
+    assert.equal((await api.delete(`/authors/${insertedId}`)).status, 200);
+  });
+
+  test('a reserved place with no saved book gives a clear 409, not "0 books"', async () => {
+    const author = await createAuthor();
+    await Author.updateOne({ _id: author._id }, { $inc: { bookCount: 1 } });
+    const res = await api.delete(`/authors/${author._id}`);
+    assert.equal(res.status, 409);
+    assert.match(res.body.message, /being saved right now/);
+  });
+
+  test('syncBookCounts sets every counter to the real number of books', async () => {
+    const seeded = await createAuthor();
+    const overCounted = await createAuthor({ name: 'Over Counted' });
+    const correct = await createAuthor({ name: 'Correct' });
+    await insertBookDirectly(seeded._id);
+    await Author.updateOne({ _id: overCounted._id }, { $set: { bookCount: 3 } });
+    await createBook(correct._id);
+
+    assert.equal(await syncBookCounts(), 2);
+    assert.equal(await syncBookCounts(), 0, 'a second run has nothing left to fix');
+    assert.equal(await counterOf(seeded._id), 1);
+    assert.equal(await counterOf(overCounted._id), 0);
+    assert.equal(await counterOf(correct._id), 1);
+    assert.equal((await api.delete(`/authors/${overCounted._id}`)).status, 200);
+
+    // The seeded book now behaves like any other: delete it and its author can go.
+    const [book] = (await api.get(`/authors/${seeded._id}/books`)).body;
+    await api.delete(`/books/${book._id}`);
+    assert.equal((await api.delete(`/authors/${seeded._id}`)).status, 200);
+  });
+});
+
 describe('input edge cases', () => {
   test('titles differing only in inner spacing are duplicates, and are stored tidied', async () => {
     const author = await createAuthor();
