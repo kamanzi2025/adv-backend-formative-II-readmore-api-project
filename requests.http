@@ -6,6 +6,7 @@
 @authorId = PASTE_AUTHOR_ID
 @otherAuthorId = PASTE_SECOND_AUTHOR_ID
 @bookId = PASTE_BOOK_ID
+@emptyAuthorId = PASTE_EMPTY_AUTHOR_ID
 
 ### Health check
 GET {{base}}/
@@ -38,6 +39,21 @@ Content-Type: application/json
 
 ### Unknown author -> 404
 GET {{base}}/authors/000000000000000000000000
+
+### Malformed id -> 404 (no author can have this id), not a 500
+GET {{base}}/authors/not-an-id
+
+### Missing required name -> 400
+POST {{base}}/authors
+Content-Type: application/json
+
+{ "country": "Kenya" }
+
+### Create an author with no books (paste its id into @emptyAuthorId)
+POST {{base}}/authors
+Content-Type: application/json
+
+{ "name": "Wole Soyinka", "country": "Nigeria" }
 
 ############ Books ############
 
@@ -145,8 +161,14 @@ GET {{base}}/books?sort=title&page=1&limit=2
 ### 6. Author stats
 GET {{base}}/authors/{{authorId}}/stats
 
-### 6. Stats for an author with no books (create one first and paste its id)
-GET {{base}}/authors/PASTE_EMPTY_AUTHOR_ID/stats
+### 6. Stats for an author with no books -> count 0, the rest null
+GET {{base}}/authors/{{emptyAuthorId}}/stats
+
+### 4. Delete an author with no books -> 200 (the block only applies while they have books)
+DELETE {{base}}/authors/{{emptyAuthorId}}
 
 ### Delete a book
+DELETE {{base}}/books/{{bookId}}
+
+### Deleting it again -> 404
 DELETE {{base}}/books/{{bookId}}

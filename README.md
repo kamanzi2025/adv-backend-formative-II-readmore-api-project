@@ -43,6 +43,12 @@ tests/             end-to-end tests for every endpoint and rule
 
 **Status codes.** 400 for a malformed request (missing required field, wrong type, unknown author, bad query param), 404 for an id that doesn't match anything, 409 for a conflict with existing data (duplicate title, deleting an author who still has books), and 422 for a well-formed value that breaks a business rule (price or year).
 
+**Malformed ids.** An id in the URL that isn't a valid ObjectId (`/authors/abc`) gets the same 404 as a valid id that matches nothing: no record can ever have that id, so "not found" is the true answer, and the client handles one case instead of two. It is checked before querying, so Mongoose never throws a cast error that would become a 500. An invalid id in the request *body* or query (`"author": "abc"`, `?author=abc`) is different: that is bad input, so it gets 400.
+
+**When a request breaks several rules.** Book checks run cheapest first and stop at the first failure: field shape and types (400), then price and year (422), then duplicate title (409), then whether the author exists (400). The author check comes last because it is the only one that writes (it reserves the author's place, see rule 1). So a book with price `-1` and an unknown author gets 422.
+
+**Response shapes.** Single records come back as the object itself; errors are always `{ message }`, plus an `errors` list for validation failures. `GET /books` returns `{ page, limit, total, totalPages, results }` because the pagination challenge asks for those fields, and the shape stays the same with or without paging. `GET /authors` and `GET /authors/:id/books` return plain arrays: they have no filters or paging, so an envelope would only add nesting.
+
 **Required fields.** An author needs a `name`; `country` and `bio` are optional. A book needs all five fields, because every one is used by the store: filtering (genre, price), the year rule, and the link to an author.
 
 **1 — No orphan books.** `required: true` only checks that *some* value was sent. MongoDB has no foreign keys, so it will store any well-formed id, even one that matches no author. So the API checks that the author exists before saving and returns 400 if they don't. This check also runs when an update changes a book's author.
